@@ -1,0 +1,119 @@
+
+
+
+4
+
+I have an exe file generated with py2exe. In the setup.py I specify an icon to be embedded in the exe:
+
+windows=[{'script': 'my_script.py','icon_resources': [(0, 'my_icon.ico')], ...
+I tried loading the icon using:
+
+hinst = win32api.GetModuleHandle(None)
+hicon = win32gui.LoadImage(hinst, 0, win32con.IMAGE_ICON, 0, 0, win32con.LR_DEFAULTSIZE)
+But this produces an (very unspecific) error:
+pywintypes.error: (0, 'LoadImage', 'No error message is available')
+
+If I try specifying 0 as a string
+
+hicon = win32gui.LoadImage(hinst, '0', win32con.IMAGE_ICON, 0, 0, win32con.LR_DEFAULTSIZE)
+then I get the error:
+pywintypes.error: (1813, 'LoadImage', 'The specified resource type cannot be found in the image file.')
+
+So, what's the correct method/syntax to load the icon?
+Also please notice that I don't use any GUI toolkit - just the Windows API via PyWin32.
+
+
+Here is a workaround until py2exe gets fixed and you don't want to include the same icon twice:
+
+hicon = win32gui.CreateIconFromResource(win32api.LoadResource(None, win32con.RT_ICON, 1), True)
+Be aware that 1 is not the ID you gave the icon in setup.py (which is the icon group ID), but the resource ID automatically assigned by py2exe to each icon in each icon group. At least that's how I understand it.
+
+If you want to create an icon with a specified size (as CreateIconFromResource uses the system default icon size), you need to use CreateIconFromResourceEx, which isn't available via PyWin32:
+
+icon_res = win32api.LoadResource(None, win32con.RT_ICON, 1)
+hicon = ctypes.windll.user32.CreateIconFromResourceEx(icon_res, len(icon_res), True,
+    0x00030000, 16, 16, win32con.LR_DEFAULTCOLOR)
+link|flag
+ans
+
+
+
+
+
+
+# coding: utf-8
+
+from distutils.core import setup
+import py2exe
+import sys
+
+
+#deal with some case after packing, such as run with error "LookupError: unknown encoding: utf-8"
+includes = ["encodings", "encodings.*", "dbhash", "email.mime.*", "email.*"]
+excludes = []
+
+
+class Target:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+        # for the versioninfo resources
+        self.version = "1.0"
+        self.company_name = "GxLucent"
+        self.copyright = "gyzhang"
+        self.name = "ddc update"
+
+#Put content in *.exe.manifest here, the key to resolve XP sytle after pack
+manifest_template = '''
+                    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                    <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+                    <assemblyIdentity version="1.0.0.0" processorArchitecture="X86" name="*.*.*" type="win32" />
+                    <description>*</description>
+                    <dependency>
+                    <dependentAssembly>
+                    <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls"
+                     version="6.0.0.0" processorArchitecture="X86" publicKeyToken="6595b64144ccf1df" language="*" />
+                    </dependentAssembly>
+                    </dependency>
+                    </assembly>
+                    '''
+RT_MANIFEST = 24
+#detail setting about the target program.
+Main = Target(
+                    # The first three parameters are not required, if at least a
+                    # 'version' is given, then a versioninfo resource is built from
+                    # them and added to the executables.
+                    version = "0.1",
+                    description = "ddc update",
+                    name = "CMmTarget",
+                    # what to build, script equals your program's file name
+                    script = "MainFrame.py",
+                    other_resources = [(RT_MANIFEST, 1, manifest_template)],
+                    #icon.ico is the target program's icon
+                    icon_resources = [(1, r"pic/Downloads.ico")],
+                    #target exe file name is FileSynchronizer here
+                    dest_base = "ddcupdator"
+                 )
+
+
+# pack the FileSynchronizer
+setup(
+        options = {
+                    "py2exe": { # typelib for WMI
+                                "typelibs": [('{565783C6-CB41-11D1-8B02-00600806D9B6}', 0, 1, 2)],
+                                # create a compressed zip archive
+                                "compressed": 1,
+                                "optimize": 2,
+                                "ascii": 1,
+                                "bundle_files": 1,
+                                "includes": includes,
+                                "excludes": excludes
+                              }
+                  },
+        # The lib directory contains everything except the executables and the python dll.
+        # Can include a subdirectory name.
+        zipfile = None,
+        #remove the DOS window when run the program, replace "console" with "windows"
+        windows = [Main],
+        #all file list below will be include in the pack folder.
+        #data_files=[("", ["icon", ]),]
+     )
